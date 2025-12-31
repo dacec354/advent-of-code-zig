@@ -21,20 +21,20 @@ pub fn main() !void {
     // answer
     var res: u64 = 1;
 
-    const Mask = std.bit_set.IntegerBitSet(32);
-
     while (try reader.takeDelimiter('\n')) |line| {
         // linear equations
-        const target_mask = Mask.initEmpty();
+        var target_mask = Mask.initEmpty();
         var button_mask_arr = try std.ArrayList(Mask).initCapacity(allocator, 64);
-        _ = button_mask_arr; // autofix
+        var n: usize = undefined; // num of variables
 
         // parsing input
         var iter = std.mem.splitScalar(u8, line, ' ');
         // parsing target [.##..]
         var str = iter.next().?;
+        n = str.len - 2;
         for (str[1 .. str.len - 1], 0..) |c, i| switch (c) {
             '#' => target_mask.set(i),
+            '.' => {},
             else => unreachable,
         };
 
@@ -46,31 +46,101 @@ pub fn main() !void {
                 break;
             }
             var button_mask = Mask.initEmpty();
-            var it = std.mem.splitScalar(u8, button_str[1..button_str.len], ',');
+            var it = std.mem.splitScalar(u8, button_str[1 .. button_str.len - 1], ',');
             while (it.next()) |index_str| {
                 const i = try std.fmt.parseInt(usize, index_str, 10);
                 button_mask.set(i);
             }
-            button_mask_arr.append(allocator, button_mask);
+            try button_mask_arr.append(allocator, button_mask);
         }
 
         // gaussian elimination
-
+        const solution = try gaussianEliminationGF2(allocator, n, button_mask_arr.items, target_mask);
+        switch (solution) {
+            .no_solution => {
+                std.debug.print("line: {s}", .{line});
+                @panic("Invalid input, no solution");
+            },
+            .infinite => {
+                std.debug.print("line: {s}", .{line});
+                @panic("Invalid input, infinite solution");
+            },
+            .unique => |s| {
+                res += s.count();
+            },
+        }
     }
 
     try stdout.print("{d}\n", .{res});
     try stdout.flush();
 }
 
-// context must be a struct have functions:
-// fn add(a: T, b; T) T
-// fn mul(a: T, b: T) T
-fn LinearEquationSystem(T: type, comptime context: anytype, equations: []T, target: T) type {
-    _ = context; // autofix
-    _ = equations; // autofix
-    _ = target; // autofix
-    return struct {
-        equations: []T,
-        target: T,
+const Mask = std.bit_set.IntegerBitSet(32);
+
+fn SolveResult(comptime T: type) type {
+    return union(enum) {
+        no_solution,
+        unique: T,
+        infinite,
+    };
+}
+
+fn gaussianEliminationGF2(allocator: std.mem.Allocator, n: usize, buttons: []const Mask, target: Mask) !SolveResult(Mask) {
+    // transpose it to mxn
+    const m = buttons.len;
+    const augmented_matrix = try allocator.alloc(Mask, n);
+    defer allocator.free(augmented_matrix);
+    for (0..n) |row| {
+        var mask = Mask.initEmpty();
+
+        for (0..m) |col| if (buttons[col].isSet(row)) mask.set(col);
+
+        if (target.isSet(row)) mask.set(m);
+
+        augmented_matrix[row] = mask;
+    }
+
+    var arr_buffer: [Mask.bit_length]usize = undefined;
+    var pivot_cols_arr = std.ArrayList(usize).initBuffer(&arr_buffer);
+
+    // elimination
+    var pivot_row: usize = 0;
+    for (0..m) |col| {
+        const target_pivot_row = for (pivot_row..augmented_matrix.len) |j| {
+            if (augmented_matrix[j].isSet(col)) break j;
+        } else continue;
+
+        // swap
+        if (target_pivot_row != pivot_row) {
+            const temp = augmented_matrix[pivot_row];
+            augmented_matrix[pivot_row] = augmented_matrix[target_pivot_row];
+            augmented_matrix[target_pivot_row] = temp;
+        }
+
+        // forward elimination
+        for (augmented_matrix, 0..) |*bs, i| {
+            if (i != pivot_row and bs.isSet(col)) bs.toggleSet(augmented_matrix[pivot_row]);
+        }
+
+        try pivot_cols_arr.appendBounded(col);
+        pivot_row += 1;
+    }
+    std.debug.print("augmented matrix: {any}\n", .{augmented_matrix});
+
+    // check no solution
+    for (augmented_matrix[pivot_row..]) |bs| {
+        if (bs.isSet(m)) return .no_solution;
+    }
+
+    // check infinite
+    if (pivot_cols_arr.items.len < m) return .infinite;
+
+    // unique solution
+    return blk: {
+        var result = Mask.initEmpty();
+        for (0..pivot_cols_arr.items.len) |i| {
+            if (augmented_matrix[i].isSet(m)) result.set(i);
+        }
+        break :blk .{ .unique = result };
     };
 }
