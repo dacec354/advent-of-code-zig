@@ -251,10 +251,10 @@ fn solve(machine: *const Machine) i64 {
     for (0..num_free) |fi| {
         const fc = free_vars[fi];
         // 这个自由变量最多能取多少？受限于它影响的计数器的目标值
-        var max_val: i64 = 0;
+        var max_val: i64 = std.math.maxInt(i64);
         for (0..n) |row| {
             if (machine.buttons[fc].affects[row]) {
-                if (machine.targets[row] > max_val) {
+                if (machine.targets[row] < max_val) {
                     max_val = machine.targets[row];
                 }
             }
