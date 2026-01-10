@@ -70,7 +70,6 @@ fn solve(allocator: std.mem.Allocator, path_graph: std.StringHashMap(std.ArrayLi
         const start_to_fft = try dp(&memory, path_graph, "svr", "fft");
         memory.clearRetainingCapacity();
         const dac_to_end = try dp(&memory, path_graph, "dac", "out");
-        memory.clearRetainingCapacity();
 
         return start_to_fft * fft_to_dac * dac_to_end;
     }
